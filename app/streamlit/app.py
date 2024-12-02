@@ -9,7 +9,7 @@ st.markdown("<h1 style='text-align: center;'>Chatbot UCB</h1>", unsafe_allow_htm
 st.markdown("""
         <style>
         .bubble-user {
-            background-color: #b1ddc9;
+            background-color: #fefd97;
             padding: 10px;
             border-radius: 10px;
             margin-bottom: 10px;
@@ -19,7 +19,7 @@ st.markdown("""
             margin-left: auto; 
         }
         .bubble-database {
-            background-color: #fbceb1;
+            background-color: #bde0fe;
             padding: 10px;
             border-radius: 10px;
             margin-bottom: 10px;
