@@ -1,28 +1,14 @@
-import os
-from sqlalchemy import create_engine,text
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
-from dotenv import load_dotenv
-from typing import List, Dict
-import mysql.connector
-from mysql.connector import Error
-import json
+from sqlalchemy.orm import Session
+from app.models.file import File
+from app.models.vector_store import VectorStore
+from app.core.config import settings
 
-load_dotenv() 
-
-URL_DATABASE = os.getenv('DATABASE_URL')
-db_config = {
-    "host": os.getenv('DB_HOST'), 
-    "user": os.getenv('DB_USER'),       
-    "password":  os.getenv('DB_PASS'),      
-    "database":  os.getenv('DB_NAME'), 
-    "port": os.getenv('DB_PORT')        
-}
-
-
-engine = create_engine(URL_DATABASE)
+DATABASE_URL = settings.DATABASE_URL
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
 
 def get_db():
     db = SessionLocal()
@@ -31,90 +17,32 @@ def get_db():
     finally:
         db.close()
 
-def execute_sql_query(query: str, db: Session) -> List[Dict]:
-    try:
-       
-        query = query.strip().rstrip(';')
-      
-        if not is_sql_query_safe(query):
-            raise Exception("SQL query is unsafe")
+def create_file(db: Session, filename: str, filetype: str, filepath: str):
+    db_file = File(filename=filename, filetype=filetype, filepath=filepath)
+    db.add(db_file)
+    db.commit()
+    db.refresh(db_file)
+    return db_file    
 
-        result = db.execute(text(query))
-        rows = result.fetchall()
+def file_exists(db: Session, filename: str, filepath: str):
+    return db.query(File).filter((File.filename == filename) | (File.filepath == filepath)).first()
 
-        if rows:
-            data = []
-            for row in rows:
-                data.append(dict(zip(result.keys(), row)))
-            return data
-        else:
-            return []
+def create_vector_store(db: Session, filepath: str):
+    db_store = VectorStore(filepath=filepath)
+    db.add(db_store)
+    db.commit()
+    db.refresh(db_store)
+    return db_store
 
-    except Exception as e:
-        print(f"Error: {e}")
-        return []
-    
-    
-def is_sql_query_safe(sql_query):
-    prohibited_phrases = [
-        "DROP", "DELETE", "INSERT", "ALTER", "TRUNCATE",
-        "EXEC", "--", "/*", "*/", "@@", "@", "SHUTDOWN",
-        "GRANT", "REVOKE"
-    ]
-    for phrase in prohibited_phrases:
-        if phrase.lower() in sql_query.lower():
-            return False
-    return True
+def get_vector_store(db: Session):
+    return db.query(VectorStore).first()
 
-def get_database_schema() -> str:
-    connection = None
-    try:
-        connection = mysql.connector.connect(**db_config)
-        cursor = connection.cursor(dictionary=True)
+def create_or_update_vector_store(db: Session, filepath: str):
+    existing_store = get_vector_store(db)
 
-        # Retrieve All Tables
-        cursor.execute("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s", (db_config['database'],))
-        tables = cursor.fetchall()
-
-        # Initialize the schema dictionary
-        database_schema = {}
-
-        # Retrieve Schema Information for Each Table
-        for table in tables:
-            table_name = table['TABLE_NAME']
-
-            # Get column details for each table
-            cursor.execute(f"""
-                SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA
-                FROM INFORMATION_SCHEMA.COLUMNS
-                WHERE TABLE_NAME = %s AND TABLE_SCHEMA = %s
-            """, (table_name, db_config['database']))
-            columns = cursor.fetchall()
-
-            # Get primary key information
-            cursor.execute(f"""
-                SELECT COLUMN_NAME
-                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
-                WHERE TABLE_NAME = %s AND CONSTRAINT_NAME = 'PRIMARY' AND TABLE_SCHEMA = %s
-            """, (table_name, db_config['database']))
-            primary_keys = cursor.fetchall()
-
-            # Organize the table schema
-            database_schema[table_name] = {
-                "columns": columns,
-                "primary_keys": [key["COLUMN_NAME"] for key in primary_keys]
-            }
-
-        # Convert the Schema to JSON
-        database_schema_json = json.dumps(database_schema, indent=4)
-        return database_schema_json
-
-    except mysql.connector.Error as e:
-        print("Erro")
-        return f"Error: {e}"
-        
-
-    finally:
-        if connection.is_connected():
-            cursor.close()
-            connection.close()
+    if existing_store:
+        existing_store.filepath = filepath
+        db.commit()
+        return existing_store
+    else:
+        return create_vector_store(db, filepath)

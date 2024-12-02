@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String
-from app.db.db import Base
+from app.db.base import Base
 
 class File(Base):
     __tablename__ = 'files'
